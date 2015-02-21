@@ -17,6 +17,8 @@ module Reactive
    , withDyn2
    , withDyn3
    , delay
+   , bind
+   , bindWith
    )
 where
 
@@ -40,8 +42,8 @@ newDyn :: a -> IO (DynValue a)
 newDyn a = DynValue <$> newTVarIO (Value a)
 
 -- | Assign a closure a to dynamic variable
-assignDyn :: DynValue a -> Closure s a -> IO ()
-assignDyn (DynValue var) f = do
+assignDyn :: Closure s a -> DynValue a -> IO ()
+assignDyn f (DynValue var) = do
       -- Set initial value synchronously
       (val,newState) <- exec1 Nothing
       case val of
@@ -111,6 +113,10 @@ checkStoreAndReturn new ret = do
       Just old | old == new ->lift $ retry
       _ -> storeAndReturn new ret
 
+withDyn1 :: (Eq a) => (a -> r) -> DynValue a -> Closure a r
+withDyn1 f a =
+   withDyn a $ \a' ->
+      checkStoreAndReturn a' (f a')
 
 withDyn2 :: (Eq a, Eq b) => (a -> b -> r) -> DynValue a -> DynValue b -> Closure (a,b) r
 withDyn2 f a b =
@@ -144,3 +150,17 @@ delay n def v =
             (0,_,ys,[])   -> let (x:xs) = reverse (y:ys) in storeAndReturn (0,y,[],xs) x
             (m,_,ys,xs)   -> storeAndReturn (m-1,y,y:ys,xs) def
       
+
+binderWith :: Eq a => (a -> r) -> DynValue a -> Closure a r
+binderWith f = withDyn1 f
+
+binder :: Eq a => DynValue a -> Closure a a
+binder = binderWith id
+
+-- | Bind a value to another
+bind :: Eq a => DynValue a -> DynValue a -> IO ()
+bind = assignDyn . binder
+
+-- | Bind a value to another with the given modifier function
+bindWith :: Eq a => (a -> r) -> DynValue a -> DynValue r -> IO ()
+bindWith f = assignDyn . binderWith f

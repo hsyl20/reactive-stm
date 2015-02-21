@@ -13,7 +13,7 @@ main = do
    t1 <- readDynIO z
    putStrLn $ "z before assignation: " ++ show t1
 
-   assignDyn z (adder x y)
+   assignDyn (adder x y) z
 
    t2 <- readDynIO z
    putStrLn $ "z after assignation: " ++ show t2
@@ -36,7 +36,7 @@ main = do
    putStrLn "Test delay:"
    d <- newDyn (17 :: Int)
    d' <- newDyn 0
-   assignDyn d' (delay 3 (-1) d)
+   assignDyn (delay 3 (-1) d) d'
 
    forM_ [27..38] $ \i -> do
       writeDynIO d i
