@@ -1,11 +1,12 @@
 import Reactive
 
 import Control.Concurrent
+import Control.Monad (forM_)
 
 main :: IO ()
 main = do
 
-   x <- newDyn (0 :: Int)
+   x <- newDyn (3 :: Int)
    y <- newDyn 5
    z <- newDyn 2
 
@@ -14,13 +15,11 @@ main = do
 
    assignDyn z (adder x y)
 
-   -- give some time to the assign thread to be executed
-   threadDelay 100
-
    t2 <- readDynIO z
    putStrLn $ "z after assignation: " ++ show t2
 
    writeDynIO x 18
+   -- give some time to the assign thread to be executed
    threadDelay 100
 
    t3 <- readDynIO z
@@ -31,6 +30,21 @@ main = do
 
    t4 <- readDynIO z
    putStrLn $ "z after y is destroyed: " ++ show t4
+
+
+   ---------------
+   putStrLn "Test delay:"
+   d <- newDyn (17 :: Int)
+   d' <- newDyn 0
+   assignDyn d' (delay 3 (-1) d)
+
+   forM_ [27..34] $ \i -> do
+      writeDynIO d i
+      threadDelay 100
+      vd <- readDynIO d
+      vd' <- readDynIO d'
+      putStrLn $ "d: " ++ show vd
+      putStrLn $ "delayed d: " ++ show vd'
 
 
 adder :: (Num a, Eq a) => DynValue a -> DynValue a -> Closure (a,a) a

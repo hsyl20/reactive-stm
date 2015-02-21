@@ -16,6 +16,7 @@ module Reactive
    , storeAndReturn
    , withDyn2
    , withDyn3
+   , delay
    )
 where
 
@@ -40,13 +41,20 @@ newDyn a = DynValue <$> newTVarIO (Value a)
 
 -- | Assign a closure a to dynamic variable
 assignDyn :: DynValue a -> Closure s a -> IO ()
-assignDyn (DynValue var) f = void (forkIO (exec Nothing))
+assignDyn (DynValue var) f = do
+      -- Set initial value synchronously
+      (val,newState) <- exec1 Nothing
+      case val of
+         Destroyed -> return ()
+         _         -> void (forkIO (exec newState))
    where 
+      exec1 initState = atomically $ do
+         (v,s) <- runStateT f initState
+         writeTVar var v
+         return (v,s)
+
       exec initState = do
-         (val,newState) <- atomically $ do
-            (v,s) <- runStateT f initState
-            writeTVar var v
-            return (v,s)
+         (val,newState) <- exec1 initState
          case val of
             Destroyed -> return ()
             _         -> exec newState
@@ -108,7 +116,17 @@ withDyn3 f a b c =
 --
 -- When the source is destroyed, the target is destroyed too (without any
 -- delay)
---delay :: Int -> a -> DynValue a -> Closure ([a],[a])
---delay n def v =
---   withDyn v $ \v' -> do
+--
+-- If the source changes too fast, some value may be missed (it depends on the
+-- thread scheduler).
+delay :: Eq a => Int -> a -> DynValue a -> Closure (Int,a,[a],[a]) a
+delay n def v =
+   withDyn v $ \y -> do
+      get >>= \case
+         Nothing -> storeAndReturn (n,y,[y],[]) def
+         Just st -> case st of
+            (_,lst,_,_) | lst == y -> lift $ retry
+            (0,_,ys,x:xs) -> storeAndReturn (0,y,y:ys,xs) x
+            (0,_,ys,[])   -> let (x:xs) = reverse (y:ys) in storeAndReturn (0,y,[],xs) x
+            (m,_,ys,xs)   -> storeAndReturn (m-1,y,y:ys,xs) def
       
