@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Reactive
    ( Value(..)
    , DynValue (..)
@@ -11,6 +12,7 @@ module Reactive
    , destroyDynSTM
    , destroyDynIO
    , withDyn
+   , checkStoreAndReturn
    , storeAndReturn
    , withDyn2
    , withDyn3
@@ -31,14 +33,14 @@ data Value a
 
 data DynValue a = DynValue (TVar (Value a))
 
-type Closure s a = StateT s STM (Value a)
+type Closure s a = StateT (Maybe s) STM (Value a)
 
 newDyn :: a -> IO (DynValue a)
 newDyn a = DynValue <$> newTVarIO (Value a)
 
 -- | Assign a closure a to dynamic variable
-assignDyn :: DynValue a -> Closure s a -> s -> IO ()
-assignDyn (DynValue var) f ini = void (forkIO (exec ini))
+assignDyn :: DynValue a -> Closure s a -> IO ()
+assignDyn (DynValue var) f = void (forkIO (exec Nothing))
    where 
       exec initState = do
          (val,newState) <- atomically $ do
@@ -75,26 +77,38 @@ withDyn dyn f = do
       Destroyed -> return Destroyed
       Value x   -> f x
 
-storeAndReturn :: Eq s => s -> b -> Closure s b
+storeAndReturn :: s -> b -> Closure s b
 storeAndReturn new ret = do
+   put (Just new)
+   return (Value ret)
+
+checkStoreAndReturn :: Eq s => s -> b -> Closure s b
+checkStoreAndReturn new ret = do
    -- check that new state is different
-   old <- get
-   if old == new
-      then lift $ retry
-      else do
-         put new
-         return (Value ret)
+   get >>= \case
+      Just old | old == new ->lift $ retry
+      _ -> storeAndReturn new ret
 
 
 withDyn2 :: (Eq a, Eq b) => (a -> b -> r) -> DynValue a -> DynValue b -> Closure (a,b) r
 withDyn2 f a b =
    withDyn a $ \a' ->
       withDyn b $ \b' ->
-         storeAndReturn (a',b') (f a' b')
+         checkStoreAndReturn (a',b') (f a' b')
 
 withDyn3 :: (Eq a, Eq b, Eq c) => (a -> b -> c -> r) -> DynValue a -> DynValue b -> DynValue c -> Closure (a,b,c) r
 withDyn3 f a b c =
    withDyn a $ \a' ->
       withDyn b $ \b' ->
          withDyn c $ \c' ->
-            storeAndReturn (a',b',c') (f a' b' c')
+            checkStoreAndReturn (a',b',c') (f a' b' c')
+
+
+-- | Delay value changes
+--
+-- When the source is destroyed, the target is destroyed too (without any
+-- delay)
+--delay :: Int -> a -> DynValue a -> Closure ([a],[a])
+--delay n def v =
+--   withDyn v $ \v' -> do
+      

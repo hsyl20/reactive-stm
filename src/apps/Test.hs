@@ -12,7 +12,7 @@ main = do
    t1 <- readDynIO z
    putStrLn $ "z before assignation: " ++ show t1
 
-   assignDyn z (adder x y) (0,0)
+   assignDyn z (adder x y)
 
    -- give some time to the assign thread to be executed
    threadDelay 100
@@ -30,7 +30,7 @@ main = do
    threadDelay 100
 
    t4 <- readDynIO z
-   putStrLn $ "z after y is destroy: " ++ show t4
+   putStrLn $ "z after y is destroyed: " ++ show t4
 
 
 adder :: (Num a, Eq a) => DynValue a -> DynValue a -> Closure (a,a) a
