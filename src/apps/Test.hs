@@ -51,7 +51,29 @@ main = do
             destroyDynIO d
          else return ()
 
+   ---------------
+   putStrLn "Test linear binding:"
+   u <- newDyn (2 :: Int)
+   v <- newDyn 200
+   bindLinear 4 v u
 
+   let readLoop = do
+         value <- readDynIO u
+         value2 <- readDynIO v
+         putStrLn $ "Current values: " ++ show value ++ " ; " ++ show value2
+         case (value,value2) of
+            (Value k, Value l) | k == l -> putStrLn "Linear animation completed"
+            (Destroyed,_) -> putStrLn "Destroyed!"
+            (_,Destroyed) -> putStrLn "Destroyed!"
+            (Value k, Value l) | k > 20 && l /= 5  -> do
+               putStrLn "Changing target value to 5"
+               writeDynIO v 5
+               readLoop
+            _         -> do
+               threadDelay 500
+               readLoop
+
+   readLoop
 
 adder :: (Num a, Eq a) => DynValue a -> DynValue a -> Closure (a,a) a
 adder = withDyn2 (+)

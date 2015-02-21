@@ -19,6 +19,8 @@ module Reactive
    , delay
    , bind
    , bindWith
+   , clockTime
+   , bindLinear
    )
 where
 
@@ -26,8 +28,11 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad (void)
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Class (lift,MonadTrans)
 import Control.Applicative ((<$>))
+
+import System.Clock
+import GHC.Conc.Sync (unsafeIOToSTM)
 
 data Value a
    = Value a
@@ -43,7 +48,11 @@ newDyn a = DynValue <$> newTVarIO (Value a)
 
 -- | Assign a closure a to dynamic variable
 assignDyn :: Closure s a -> DynValue a -> IO ()
-assignDyn f (DynValue var) = do
+assignDyn f v = assignDynWithDelay 0 f v
+
+-- | Assign a closure a to dynamic variable with a specific delay
+assignDynWithDelay :: Int -> Closure s a -> DynValue a -> IO ()
+assignDynWithDelay d f (DynValue var) = do
       -- Set initial value synchronously
       (val,newState) <- exec1 Nothing
       case val of
@@ -64,7 +73,12 @@ assignDyn f (DynValue var) = do
          (val,newState) <- exec1 initState
          case val of
             Destroyed -> return ()
-            _         -> exec newState
+            _         -> do
+               -- Make the spinning thread sleep a little bit if necessary
+               if d > 0
+                  then threadDelay d
+                  else yield
+               exec newState
 
 
 readDynIO :: DynValue a -> IO (Value a)
@@ -164,3 +178,43 @@ bind = assignDyn . binder
 -- | Bind a value to another with the given modifier function
 bindWith :: Eq a => (a -> r) -> DynValue a -> DynValue r -> IO ()
 bindWith f = assignDyn . binderWith f
+
+-- | Return monotonic clock time (arbitrary origin). This can be used for
+-- animations
+clockTime :: MonadTrans t => t STM TimeSpec
+clockTime = lift $ unsafeIOToSTM (getTime Monotonic)
+
+
+binderLinear :: (Eq a, Num a, Ord a, Integral a) => Float -> DynValue a -> DynValue a -> Closure (TimeSpec,Float) a
+binderLinear speed src tgt = do
+   let
+      absSpeed = abs speed * (1e-9 :: Float)
+
+   withDyn src $ \x2 ->
+      withDyn tgt $ \x1 -> if x1 == x2
+         then lift $ retry
+         else do
+            t2 <- clockTime
+            get >>= \case
+               Nothing -> storeAndReturn (t2,0) x1
+               Just (t1,dx) -> let
+                     tt t = fromIntegral (sec t) * (1e9 :: Float) + (fromIntegral $ nsec t)
+                     dt = tt t2 - tt t1
+                     dir = if x2-x1 > 0 then 1 else -1
+                     realx = fromIntegral x1 + dir * absSpeed * dt + dx
+                     x' = ceiling realx
+                     x = if dir > 0
+                        then min x' x2
+                        else max x' x2
+                     dx' = realx - fromIntegral x'
+                  in storeAndReturn (t2,dx') x
+
+-- | Linear binding
+--
+-- Speed is in unit/sec
+bindLinear :: (Eq a, Num a, Ord a, Integral a) => Float -> DynValue a -> DynValue a -> IO ()
+bindLinear speed src tgt = assignDynWithDelay animDelay (binderLinear speed src tgt) tgt
+
+-- | Animation delay (milliseconds)
+animDelay :: Int
+animDelay = 100

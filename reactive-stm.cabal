@@ -21,7 +21,8 @@ library
   build-depends:       
       base >=4.7 && <4.8,
       stm == 2.4.*,
-      transformers == 0.4.*
+      transformers == 0.4.*,
+      clock == 0.4.*
 
   ghc-options: -Wall -threaded -O2
 
