@@ -38,13 +38,19 @@ main = do
    d' <- newDyn 0
    assignDyn d' (delay 3 (-1) d)
 
-   forM_ [27..34] $ \i -> do
+   forM_ [27..38] $ \i -> do
       writeDynIO d i
       threadDelay 100
       vd <- readDynIO d
       vd' <- readDynIO d'
       putStrLn $ "d: " ++ show vd
       putStrLn $ "delayed d: " ++ show vd'
+      if i > 35
+         then do
+            putStrLn "we destroy delayed d"
+            destroyDynIO d
+         else return ()
+
 
 
 adder :: (Num a, Eq a) => DynValue a -> DynValue a -> Closure (a,a) a
